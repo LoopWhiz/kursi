@@ -16,28 +16,28 @@ from streamlit_webrtc import VideoTransformerBase, webrtc_streamer
 
 from config import CLASSES, WEBRTC_CLIENT_SETTINGS
 
-confidence = 0.25
 
+
+#изменим название страницы, отображаемое на вкладке браузера
+#set_page_config должна вызываться до всех функций streamlit
 st.set_page_config(
-    page_title="Kursi-Check",
-    page_icon="assets/icon.png",
+    page_title="YOLOv5 demo",
 )
 
-st.title("Deteksi Kursi Kosong Dan Terisi")
-st.markdown("---")
+st.title('YOLOv5 demo')
 
 
 #region Functions
 # --------------------------------------------
 
-@st.cache
-def load_model(model_type='s'):
+@st.cache_resource
+def get_yolo5(model_type='s'):
     return torch.hub.load('ultralytics/yolov5', 
                           'yolov5{}'.format(model_type), 
                           pretrained=True
                           )
-model = load_model('s')
-@st.cache
+model = get_yolo5('s')
+@st.cache_resource
 def get_preds(img : np.ndarray) -> np.ndarray:
    
     return model([img]).xyxy[0].numpy()
@@ -59,8 +59,6 @@ def process_video(vid_bytes, confidence):
     with st2:
         st.markdown("## Kursi Terisi")
         st2_Kursi_Terisi_count = st.markdown("__")
-        
-    st.markdown("---")
 
     output = st.empty()
     prev_time = 0
@@ -145,20 +143,15 @@ def get_legend_color(class_name : int):
 #sidebar
 confidence = st.sidebar.slider('Kepercayaan', min_value=0.1, max_value=1.0, value=0.50)
 
-st.sidebar.markdown("---")
-
-# Pilihan objek yang ingin dideteksi
-st.sidebar.markdown("## Objek yang ingin dideteksi")
-classes_selector = st.sidebar.multiselect('Pilih Objek', 
-                                        CLASSES, default='Kursi_kosong')
-
-st.sidebar.markdown("---")
-
 prediction_mode = st.sidebar.selectbox(
     "",
-    ('Video', 'Real-Time'),
-    index=1,
+    ('Video', 'Web camera'),
+    index=0,
     format_func=lambda mode: mode)
+    
+classes_selector = st.sidebar.multiselect('Select classes', 
+                                        CLASSES, default='Kursi_kosong')
+all_labels_chbox = st.sidebar.checkbox('All classes', value=False)
 
 
 # Prediction section
@@ -166,7 +159,9 @@ prediction_mode = st.sidebar.selectbox(
 
 #target labels and their colors
 #target_class_ids 
-if classes_selector:
+if all_labels_chbox:
+    target_class_ids = list(range(len(CLASSES)))
+elif classes_selector:
     target_class_ids = [CLASSES.index(class_name) for class_name in classes_selector]
 else:
     target_class_ids = [0]
@@ -180,7 +175,7 @@ if prediction_mode == 'Video':
     if vid_bytes:
         process_video(vid_bytes, confidence)
     
-elif prediction_mode == 'Real-Time':
+elif prediction_mode == 'Web camera':
     class VideoTransformer(VideoTransformerBase):
         def __init__(self):
             self.model = model
@@ -194,7 +189,7 @@ elif prediction_mode == 'Real-Time':
         def transform(self, frame):
             img = frame.to_ndarray(format="bgr24")
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            
+
             result = self.get_preds(img)
             result = result[np.isin(result[:,-1], self.target_class_ids)]
             
@@ -216,7 +211,6 @@ elif prediction_mode == 'Real-Time':
                 img = cv2.putText(img, label_text, (int(xmin), int(ymin) - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
                 
-            
             return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
     ctx = webrtc_streamer(
